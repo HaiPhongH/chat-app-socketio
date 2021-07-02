@@ -27,7 +27,7 @@ app.secret_key = 'SECRET KEY'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root:HaiPhong3107@localhost:3306/distributed_project'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 app.config['SQLALCHEMY_POOL_SIZE'] = 20
-app.config['SQLALCHEMY_POOL_TIMEOUT'] = 300
+app.config['SQLALCHEMY_POOL_TIMEOUT'] = 5
 
 db = SQLAlchemy(app)
 
@@ -101,15 +101,17 @@ def disconnect():
 # Handle new user notification from the friend server
 @socketio_client.on('new_user_response')
 def on_new_user_response(data):
+    print(data)
     socketio_server.emit('new_user', 
                         {'id': data['id'], 'username': data['username'],
-                        'password': data['password'], 'status': data['status']},
+                        'password': data['password'], 'status': data['status'], 'new_list_room': data['new_list_room']},
                         broadcast=True)
 
 # Handle status change notification from the friend server
 @socketio_client.on('status_change_response')
 def on_user_online_response(data):
-    STATUSES[data['id']] = data['status']
+    global STATUSES
+    STATUSES[int(data['id'])] = data['status']
     socketio_server.emit('status_change', {'id': data['id'], 'username': data['username'], 'status': data['status']},broadcast=True)
 
 @socketio_client.on('block_user_response')
@@ -124,11 +126,6 @@ def on_incoming_msg_response(data):
         socketio_server.send({'msg': data['msg']})
     else:
         socketio_server.send({'msg': data['msg'], 'username': data['username'], 'time_stamp': data['time_stamp']}, room=data['room'])
-
-# @socketio_client.event
-# def message(data):
-#     print('message', data)
-#     socketio_server.send({'msg': data['msg'], 'username': data['username'], 'time_stamp': data['time_stamp']}, room=data['room'])
 
 
 # Connect to the friend server
@@ -169,23 +166,26 @@ def index():
             db.session.add(new_user)
             db.session.commit()
 
-            # for user in all_users:
-            #     new_rom = ChatRoom(user.globalId, new_user.globalId)
-            #     db.session.add(new_rom)
-            #     db.session.commit()
+            new_list_room = {}
+            for user in all_users:
+                new_rom = ChatRoom(user.globalId, new_user.globalId)
+                db.session.add(new_rom)
+                db.session.commit()
+                new_list_room[user.globalId] = new_rom.id
             
+            global STATUSES
             all_users.append(new_user)
             STATUSES[new_user.globalId] = 'offline'
 
             socketio_server.emit('new_user',
                                 {'id': new_user.globalId, 'username': new_user.name,
-                                'password': new_user.hashpass, 'status': 'offline'},
-                                broadcast=True)
+                                'password': new_user.hashpass, 'status': 'offline', 
+                                'new_list_room': new_list_room}, broadcast=True)
             
             if is_connected:
                 socketio_client.emit('new_user_friend_server', 
                                     {'id': new_user.globalId, 'username': new_user.name, 
-                                    'password': new_user.hashpass, 'status': 'offline'})
+                                    'password': new_user.hashpass, 'status': 'offline', 'new_list_room': new_list_room})
             flash('Successfully! Please go back to login.', 'success')
             return redirect(url_for('login'))
 
@@ -199,24 +199,26 @@ def login():
     login_form = LoginForm()
 
     if login_form.validate_on_submit():
+        global STATUSES
         user_object = UserGlobal.query.filter_by(name=login_form.username.data).first()
         login_user(user_object)
-        STATUSES[user_object.globalId] = 'online'
         session['username'] = user_object.name
         session['id'] = user_object.globalId
+        STATUSES[session['id']] = 'online'
 
         socketio_server.emit('status_change', 
-                            {'id': user_object.globalId, 'username': user_object.name, 'status': 'online'},
+                            {'id': session['id'], 'username': session['username'], 'status': 'online'},
                             broadcast=True)
         if is_connected:
             socketio_client.emit('status_change_friend_server', 
-                                {'id': user_object.globalId, 'username': user_object.name, 'status': 'online'})
+                                {'id': session['id'], 'username': session['username'], 'status': 'online'})
         else:
             if establish_connection(friend_url):
                 socketio_client.emit('status_change_friend_server', 
-                                {'id': user_object.globalId, 'username': user_object.name, 'status': 'online'})
+                                {'id': session['id'], 'username': session['username'], 'status': 'online'})
             else:
                 print('Still no connection. Waiting...')
+        
         return redirect(url_for('exchange_message'))
 
     return render_template('login.html', form=login_form)
@@ -224,6 +226,7 @@ def login():
 
 @app.route('/logout', methods=['GET'])
 def logout():
+    global STATUSES
     temp_id = session['id']
     temp_name = session['username']
 
@@ -258,7 +261,7 @@ def exchange_message():
     # ROOM_IDS = session['ROOM_IDS']
     # BLOCK_STATUSES = session['BLOCK_STATUSES']
     # BLOCK_USERS = session['BLOCK_USERS']
-
+    global STATUSES
     ROOMS = []
     ROOM_IDS = {}
     BLOCK_STATUSES = {}
@@ -415,7 +418,7 @@ def join(data):
     emit('load_old_messages', {'msg': username + ' has joined the room with ' + roomName + '.',
         'sender': username,
         'receiver': roomName,
-        'all_messages': all_messages}, room=room)
+        'all_messages': all_messages})
 
 
 @socketio_server.on('leave')

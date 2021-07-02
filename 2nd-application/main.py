@@ -74,6 +74,28 @@ def index():
             new_user = UserGlobal(userId=1, name=username, serverId=1, hashpass=hashed_password)
             db.session.add(new_user)
             db.session.commit()
+
+            new_list_room = {}
+            for user in all_users:
+                new_rom = ChatRoom(user.globalId, new_user.globalId)
+                db.session.add(new_rom)
+                db.session.commit()
+                new_list_room[user.globalId] = new_rom.id
+            
+            global STATUSES
+            all_users.append(new_user)
+            STATUSES[new_user.globalId] = 'offline'
+
+            socketio_server.emit('new_user',
+                                {'id': new_user.globalId, 'username': new_user.name,
+                                'password': new_user.hashpass, 'status': 'offline', 
+                                'new_list_room': new_list_room}, broadcast=True)
+
+            socketio_server.emit('new_user_response',
+                                {'id': new_user.globalId, 'username': new_user.name,
+                                'password': new_user.hashpass, 'status': 'offline', 
+                                'new_list_room': new_list_room}, broadcast=True)
+                         
             flash('Successfully! Please go back to login.', 'success')
             return redirect(url_for('login'))
 
@@ -88,13 +110,14 @@ def login():
 
     if login_form.validate_on_submit():
         user_object = UserGlobal.query.filter_by(name=login_form.username.data).first()
-        login_user(user_object)
-        STATUSES[user_object.globalId] = 'online'
         session['username'] = user_object.name
         session['id'] = user_object.globalId
+        global STATUSES
+        STATUSES[session['id']] = 'online'
 
-        socketio_server.emit('status_change', {'id': user_object.globalId, 'username': user_object.name, 'status': 'online'}, broadcast=True)
-        socketio_server.emit('status_change_response', {'id': user_object.globalId, 'username': user_object.name, 'status': 'online'})
+        socketio_server.emit('status_change', {'id': session['id'], 'username': session['username'], 'status': 'online'}, broadcast=True)
+        socketio_server.emit('status_change_response', {'id': session['id'], 'username': session['username'], 'status': 'online'})
+        login_user(user_object)
         return redirect(url_for('exchange_message'))
 
     return render_template('login.html', form=login_form)
@@ -102,6 +125,7 @@ def login():
 
 @app.route('/logout', methods=['GET'])
 def logout():
+    global STATUSES
     temp_id = session['id']
     temp_name = session['username']
     socketio_server.emit('status_change', {'id': temp_id, 'username': temp_name, 'status': 'offline'}, broadcast=True)
@@ -120,7 +144,7 @@ def exchange_message():
     BLOCK_STATUSES = {}
     BLOCK_USERS = []
     search_form = SearchForm()
-
+    global STATUSES
     
     all_users = UserGlobal.query.filter().all()
 
@@ -252,7 +276,7 @@ def join(data):
     emit('load_old_messages', {'msg': username + ' has joined the room with ' + roomName + '.',
         'sender': username,
         'receiver': roomName,
-        'all_messages': all_messages}, room=room)
+        'all_messages': all_messages})
 
 
 @socketio_server.on('leave')
@@ -282,6 +306,7 @@ def on_first_connection(data):
 # Handle status change notification from the other server
 @socketio_server.on('status_change_friend_server')
 def on_status_change_friend_server(data):
+    global STATUSES
     print(data)
     STATUSES[data['id']] = data['status']
     emit('status_change', {'id': data['id'], 'username': data['username'], 'status': data['status']}, broadcast=True)
@@ -292,7 +317,8 @@ def on_status_change_friend_server(data):
 def on_new_user_friend_server(data):
     print(data)
     emit('new_user', 
-        {'id': data['id'], 'username': data['username'], 'password': data['password'], 'status': data['status']},
+        {'id': data['id'], 'username': data['username'], 'password': data['password'], 
+        'status': data['status'], 'new_list_room': data['new_list_room']},
         broadcast=True)
 
 # Handle new user notification from the other server

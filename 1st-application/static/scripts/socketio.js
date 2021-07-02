@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // // Set default room
     let room = document.querySelectorAll('.select-room')[0].id;
     let roomName = document.querySelectorAll('.select-room')[0].innerHTML;
-    console.log(roomName);
+    // console.log(roomName);
     joinRoom(room, roomName);
 
     let oldName = document.querySelectorAll('.select-room')[0].innerHTML;
@@ -60,26 +60,35 @@ document.addEventListener('DOMContentLoaded', () => {
         // document.querySelector('#status_' + data['id']).innerHTML = data['status'];
     });
 
-    // socket.on('new_user', data => {
-    //     console.log(data);
-    //     const p_room = document.createElement("p");
-    //     const p_status = document.createElement("p");
-    //     const input_block = document.createElement("input");
+    socket.on('new_user', data => {
+        console.log(data);
+        const div_wrapped = document.createElement("div")
+        const p_room = document.createElement("p");
+        const p_status = document.createElement("p");
+        const input_block = document.createElement("input");
+        let list_new_room = data['new_list_room'];
+        
+        div_wrapped.setAttribute("class", "block-object")
 
-    //     p_room.id = "choose_room_" + ;
-    //     p_room.setAttribute("class", "select-room cursor-pointer inline-object");
-    //     p_room.innerText = data['username'];
+        p_room.id = "choose_room_" + list_new_room[id];
+        p_room.setAttribute("class", "select-room cursor-pointer inline-object");
+        p_room.innerText = data['username'];
 
-    //     p_status.id = "status_" + ;
-    //     p_status.setAttribute("class", "select-room cursor-pointer inline-object");
-    //     p_status.innerText = data['username'];
+        p_status.id = "status_" + list_new_room[id];
+        p_status.setAttribute("class", "inline-object");
+        p_status.innerText = 'offline';
 
-    //     input_block.id = "block_user_" + ;
-    //     input_block.setAttribute("class", "block-btn inline-object");
-    //     input_block.type = "button";
-    //     input_block.value = 'Block';
+        input_block.id = "block_user_" + list_new_room[id];
+        input_block.setAttribute("class", "block-btn inline-object");
+        input_block.type = "button";
+        input_block.value = 'Block';
 
-    // });
+        div_wrapped.append(p_room);
+        div_wrapped.append(p_status);
+        div_wrapped.append(input_block);
+        document.querySelector("#sidebar").append(div_wrapped);
+        
+    });
 
     // Display history of a conversation
     socket.on('load_old_messages', data => {
@@ -204,12 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', function(e) {
         socket.emit('offline', {'id':id, 'username': username});
     });
-
-    // Logout from chat
-    // document.querySelector("#logout-btn").onclick = () => {
-    //     // socket.emit('offline', {'id':id, 'username': username});
-    //     leaveRoom(room);
-    // };
 
     // Trigger 'leave' event if user was previously on a room
     function leaveRoom(room, roomName) {
